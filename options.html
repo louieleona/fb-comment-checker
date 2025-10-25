@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>FB Comment Checker - Settings</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+
+    .container {
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      color: #1877f2;
+      margin-top: 0;
+    }
+
+    h2 {
+      color: #333;
+      font-size: 18px;
+      margin-top: 25px;
+      margin-bottom: 15px;
+      border-bottom: 2px solid #1877f2;
+      padding-bottom: 5px;
+    }
+
+    .input-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #1877f2;
+    }
+
+    .help-text {
+      font-size: 13px;
+      color: #666;
+      margin-top: 5px;
+    }
+
+    button {
+      padding: 12px 24px;
+      background-color: #1877f2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+
+    button:hover {
+      background-color: #166fe5;
+    }
+
+    .status {
+      margin-top: 15px;
+      padding: 12px;
+      border-radius: 4px;
+      display: none;
+    }
+
+    .status.success {
+      background-color: #d4edda;
+      border: 1px solid #c3e6cb;
+      color: #155724;
+    }
+
+    .instructions {
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      border-left: 4px solid #1877f2;
+    }
+
+    .instructions h3 {
+      margin-top: 0;
+      color: #1877f2;
+    }
+
+    .instructions ol {
+      margin: 10px 0;
+      padding-left: 25px;
+    }
+
+    .instructions li {
+      margin-bottom: 8px;
+      line-height: 1.6;
+    }
+
+    .instructions a {
+      color: #1877f2;
+      text-decoration: none;
+    }
+
+    .instructions a:hover {
+      text-decoration: underline;
+    }
+
+    .info-box {
+      background-color: #fff3cd;
+      border: 1px solid #ffeeba;
+      padding: 15px;
+      border-radius: 4px;
+      margin-top: 15px;
+    }
+
+    .info-box strong {
+      color: #856404;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Facebook Comment Checker Settings</h1>
+
+    <div class="instructions">
+      <h3>How to Get a Facebook Access Token</h3>
+      <ol>
+        <li>Go to the <a href="https://developers.facebook.com/tools/explorer/" target="_blank">Facebook Graph API Explorer</a></li>
+        <li>Select your app or create a new one</li>
+        <li>Add these permissions:
+          <ul>
+            <li><code>pages_read_engagement</code> (for page posts)</li>
+            <li><code>public_profile</code></li>
+          </ul>
+        </li>
+        <li>Click "Generate Access Token"</li>
+        <li>Copy the token and paste it below</li>
+      </ol>
+    </div>
+
+    <h2>API Configuration</h2>
+
+    <div class="input-group">
+      <label for="accessToken">Facebook Access Token (Optional)</label>
+      <input type="text" id="accessToken" placeholder="Enter your Facebook access token">
+      <div class="help-text">
+        The access token enables API-based comment fetching for more reliable results.
+        If not provided, the extension will try to scrape comments from the page.
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>Note:</strong> User access tokens expire quickly (usually within 1-2 hours).
+      For extended use, consider getting a Page Access Token or App Token from the Facebook Developer Console.
+    </div>
+
+    <h2>Default Settings</h2>
+
+    <div class="input-group">
+      <label for="defaultAnswer">Default Correct Answer</label>
+      <input type="text" id="defaultAnswer" placeholder="Enter default answer (optional)">
+      <div class="help-text">
+        This will be pre-filled in the popup. You can still change it for each check.
+      </div>
+    </div>
+
+    <button id="saveBtn">Save Settings</button>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
