@@ -7,3 +7,4 @@ package.json
 package-lock.json
 index.js
 .env.example
+docs/

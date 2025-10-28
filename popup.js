@@ -1,7 +1,10 @@
-// Load saved correct answer and check monitoring status
-chrome.storage.sync.get(['correctAnswer'], (result) => {
+// Load saved correct answer and match mode, check monitoring status
+chrome.storage.sync.get(['correctAnswer', 'matchMode'], (result) => {
   if (result.correctAnswer) {
     document.getElementById('correctAnswer').value = result.correctAnswer;
+  }
+  if (result.matchMode) {
+    document.getElementById('matchModeCheckbox').checked = result.matchMode === 'contains';
   }
 });
 
@@ -22,8 +25,12 @@ document.getElementById('startBtn').addEventListener('click', async () => {
     return;
   }
 
-  // Save the correct answer
-  chrome.storage.sync.set({ correctAnswer });
+  // Get match mode from checkbox
+  const checkbox = document.getElementById('matchModeCheckbox');
+  const matchMode = checkbox.checked ? 'contains' : 'exact';
+
+  // Save the correct answer and match mode
+  chrome.storage.sync.set({ correctAnswer, matchMode });
 
   // Get the current tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -37,13 +44,13 @@ document.getElementById('startBtn').addEventListener('click', async () => {
   try {
     const response = await chrome.tabs.sendMessage(tab.id, {
       action: 'startMonitoring',
-      correctAnswer: correctAnswer
+      correctAnswer: correctAnswer,
+      matchMode: matchMode
     });
 
     if (response.success) {
-      // Update UI to show monitoring is active
-      showMonitoringActive(correctAnswer);
-      showResult('Monitoring started! Watching for new comments...', 'info');
+      // Close the popup immediately
+      window.close();
     } else {
       // Show error with instructions button if needed
       if (response.showInstructions) {
@@ -77,10 +84,17 @@ document.getElementById('stopBtn').addEventListener('click', async () => {
   }
 });
 
-// Listen for messages from content script (when correct answer is found)
+// Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'correctAnswerFound') {
     displayWinner(request.winner);
+    showMonitoringInactive();
+  } else if (request.action === 'readyForNewMonitoring') {
+    // Reset to initial state for new monitoring
+    showMonitoringInactive();
+    clearWinnerDisplay();
+  } else if (request.action === 'monitoringStopped') {
+    // User stopped monitoring from the page
     showMonitoringInactive();
   }
 });
@@ -162,6 +176,21 @@ function showResultWithInstructions(message, tabId) {
   });
 }
 
+function getPositionLabel(position) {
+  const suffixes = ['th', 'st', 'nd', 'rd'];
+  const lastDigit = position % 10;
+  const lastTwoDigits = position % 100;
+
+  let suffix;
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 13) {
+    suffix = 'th';
+  } else {
+    suffix = suffixes[lastDigit] || 'th';
+  }
+
+  return `${position}${suffix}`;
+}
+
 function displayWinner(winner) {
   // Ensure we have the data we need
   const name = winner.name || 'Unknown';
@@ -169,6 +198,10 @@ function displayWinner(winner) {
   const timestamp = winner.timestamp || Date.now();
   const profileUrl = winner.profileUrl || '';
   const userId = winner.userId || '';
+  const position = winner.position || 1;
+
+  // Get position label
+  const positionLabel = getPositionLabel(position);
 
   const profileLink = profileUrl ?
     `<a href="${profileUrl}" target="_blank">${name}</a>` :
@@ -176,7 +209,7 @@ function displayWinner(winner) {
 
   const html = `
     <div class="success">
-      <strong>🎉 Correct Answer Found!</strong>
+      <strong>🎉 Comment Found! (${positionLabel} Place)</strong>
       <div class="winner-info">
         <p><strong>Winner:</strong> ${profileLink}</p>
         ${userId ? `<p><strong>User ID:</strong> ${userId}</p>` : ''}
@@ -190,4 +223,11 @@ function displayWinner(winner) {
   // Keep the result visible (don't auto-hide)
   const resultDiv = document.getElementById('result');
   resultDiv.style.display = 'block';
+}
+
+function clearWinnerDisplay() {
+  const resultDiv = document.getElementById('result');
+  resultDiv.innerHTML = '';
+  resultDiv.className = '';
+  resultDiv.style.display = 'none';
 }

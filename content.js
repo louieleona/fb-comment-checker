@@ -1,9 +1,14 @@
 // State management for monitoring
 let isMonitoring = false;
 let correctAnswer = '';
+let matchMode = 'exact'; // 'exact' or 'contains'
 let observer = null;
 let processedComments = new Set();
 let monitoringIndicator = null;
+let inlineDialog = null;
+let highlightedElements = [];
+let foundWinners = []; // Track all found winners in order
+let currentWinnerIndex = -1; // Track which winner is currently displayed
 
 // Listen for messages from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -14,7 +19,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     // Start monitoring asynchronously
-    startMonitoring(request.correctAnswer).then(() => {
+    startMonitoring(request.correctAnswer, request.matchMode || 'exact').then(() => {
       sendResponse({ success: true, message: 'Monitoring started' });
     }).catch(error => {
       sendResponse({ success: false, error: error.message });
@@ -201,6 +206,28 @@ function showInstructionsOverlay() {
 }
 
 /**
+ * Clear all previous comment highlights
+ */
+function clearHighlights() {
+  highlightedElements.forEach(element => {
+    if (element && element.style) {
+      element.style.border = '';
+      element.style.backgroundColor = '';
+      element.style.position = '';
+
+      // Remove position badge if exists
+      const badge = element.querySelector('.fb-checker-position-badge');
+      if (badge) {
+        badge.remove();
+      }
+    }
+  });
+  highlightedElements = [];
+  foundWinners = [];
+  currentWinnerIndex = -1;
+}
+
+/**
  * Check if a comment contains the correct answer
  */
 function isCorrectAnswer(message, answer) {
@@ -209,9 +236,14 @@ function isCorrectAnswer(message, answer) {
   const normalizedMessage = message.toLowerCase().trim();
   const normalizedAnswer = answer.toLowerCase().trim();
 
-  // Check if the answer appears as a whole word
-  const words = normalizedMessage.split(/\s+/);
-  return words.includes(normalizedAnswer) || normalizedMessage === normalizedAnswer;
+  if (matchMode === 'exact') {
+    // Exact mode: comment must be exactly the answer (case insensitive)
+    return normalizedMessage === normalizedAnswer;
+  } else {
+    // Contains mode: answer must appear as a whole word in the comment
+    const words = normalizedMessage.split(/\s+/);
+    return words.includes(normalizedAnswer);
+  }
 }
 
 /**
@@ -345,17 +377,53 @@ function handleNewComment(commentElement) {
  * Called when the correct answer is found
  */
 function foundCorrectAnswer(commentInfo) {
-  // Stop monitoring
-  stopMonitoring();
+  // Stop monitoring (observer only, keep indicator visible)
+  if (observer) {
+    observer.disconnect();
+    observer = null;
+  }
+  isMonitoring = false;
 
-  // Highlight the winning comment
+  // Add to winners list
+  foundWinners.push(commentInfo);
+  const position = foundWinners.length;
+  currentWinnerIndex = position - 1; // Update current index (0-based)
+
+  // Get position label
+  const positionLabel = getPositionLabel(position);
+
+  // Highlight the winning comment with position badge
   if (commentInfo.element) {
     commentInfo.element.style.border = '3px solid #00ff00';
     commentInfo.element.style.backgroundColor = '#d4edda';
+    commentInfo.element.style.position = 'relative';
+
+    // Add position badge
+    const badge = document.createElement('div');
+    badge.className = 'fb-checker-position-badge';
+    badge.style.cssText = `
+      position: absolute;
+      top: -10px;
+      left: -10px;
+      background: #00c853;
+      color: white;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      z-index: 10;
+    `;
+    badge.textContent = positionLabel;
+    commentInfo.element.insertBefore(badge, commentInfo.element.firstChild);
+
     commentInfo.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Track highlighted element so we can clear it later
+    highlightedElements.push(commentInfo.element);
   }
 
-  // Send notification
+  // Send notification to popup
   chrome.runtime.sendMessage({
     action: 'correctAnswerFound',
     winner: {
@@ -363,82 +431,498 @@ function foundCorrectAnswer(commentInfo) {
       message: commentInfo.text,
       timestamp: commentInfo.timestamp,
       profileUrl: commentInfo.profileUrl,
-      userId: commentInfo.userId
+      userId: commentInfo.userId,
+      position: position
     }
   });
 
   // Show browser notification
   if (Notification.permission === 'granted') {
-    new Notification('Correct Answer Found!', {
-      body: `${commentInfo.author} answered correctly: "${commentInfo.text}"`,
+    new Notification(`Comment Found! (${positionLabel})`, {
+      body: `${commentInfo.author}: "${commentInfo.text}"`,
       icon: chrome.runtime.getURL('icons/icon48.png')
     });
   }
 
-  // Show on-page notification
-  showOnPageNotification(commentInfo);
+  // Transform monitoring indicator to show winner
+  showWinnerInIndicator(commentInfo, position);
 }
 
 /**
- * Show a notification overlay on the page
+ * Get position label (1st, 2nd, 3rd, etc.)
  */
-function showOnPageNotification(commentInfo) {
-  const notification = document.createElement('div');
-  notification.style.cssText = `
+function getPositionLabel(position) {
+  const suffixes = ['th', 'st', 'nd', 'rd'];
+  const lastDigit = position % 10;
+  const lastTwoDigits = position % 100;
+
+  let suffix;
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 13) {
+    suffix = 'th';
+  } else {
+    suffix = suffixes[lastDigit] || 'th';
+  }
+
+  return `${position}${suffix}`;
+}
+
+/**
+ * Transform monitoring indicator to show winner information
+ */
+function showWinnerInIndicator(commentInfo, position) {
+  if (!monitoringIndicator) return;
+
+  const positionLabel = getPositionLabel(position);
+
+  // Change to success state with green gradient
+  monitoringIndicator.style.cssText = `
     position: fixed;
-    top: 20px;
-    right: 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #00c853 0%, #00e676 100%);
     color: white;
-    padding: 20px 30px;
-    border-radius: 10px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-    z-index: 10000;
+    padding: 16px 30px;
+    border-radius: 12px;
+    box-shadow: 0 6px 25px rgba(0,200,83,0.4);
+    z-index: 999999;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    min-width: 300px;
-    animation: slideIn 0.5s ease-out;
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 400px;
+    max-width: 600px;
+    animation: successPulse 0.5s ease-out;
   `;
 
-  notification.innerHTML = `
+  const profileLink = commentInfo.profileUrl
+    ? `<a href="${commentInfo.profileUrl}" target="_blank" style="color: white; text-decoration: underline; font-weight: 700;">${commentInfo.author}</a>`
+    : `<strong>${commentInfo.author}</strong>`;
+
+  const commentText = commentInfo.text.length > 100
+    ? commentInfo.text.substring(0, 100) + '...'
+    : commentInfo.text;
+
+  monitoringIndicator.innerHTML = `
     <style>
-      @keyframes slideIn {
-        from { transform: translateX(400px); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
+      @keyframes successPulse {
+        0% { transform: translateX(-50%) scale(0.95); opacity: 0.8; }
+        50% { transform: translateX(-50%) scale(1.02); }
+        100% { transform: translateX(-50%) scale(1); opacity: 1; }
       }
     </style>
-    <div style="font-size: 20px; font-weight: bold; margin-bottom: 10px;">
-      🎉 CORRECT ANSWER FOUND!
+    <div style="display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700;">
+      <span style="font-size: 24px;">🎉</span>
+      <span>COMMENT FOUND! (${positionLabel} Place)</span>
     </div>
-    <div style="font-size: 14px; margin-bottom: 5px;">
-      <strong>Winner:</strong> ${commentInfo.author}
+    <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; padding-left: 36px;">
+      <div><strong>Winner:</strong> ${profileLink}</div>
+      <div><strong>Answer:</strong> "${commentText}"</div>
+      <div style="opacity: 0.9; font-size: 11px;">${new Date(commentInfo.timestamp).toLocaleString()}</div>
     </div>
-    <div style="font-size: 14px; margin-bottom: 5px;">
-      <strong>Answer:</strong> "${commentInfo.text}"
-    </div>
-    <div style="font-size: 12px; opacity: 0.9; margin-top: 10px;">
-      ${new Date(commentInfo.timestamp).toLocaleString()}
-    </div>
-    <div style="margin-top: 15px; text-align: right;">
-      <button style="background: white; color: #667eea; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-weight: bold;">
-        Close
-      </button>
+    <div style="display: flex; justify-content: space-between; gap: 8px; padding-top: 8px;">
+      <div style="display: flex; gap: 8px;">
+        <button id="findPreviousBtn" style="background: rgba(255,255,255,0.9); border: none; color: #00c853; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; transition: all 0.2s; ${position === 1 ? 'opacity: 0.5; cursor: not-allowed;' : ''}">
+          ← Previous
+        </button>
+        <button id="findNextBtn" style="background: rgba(255,255,255,0.9); border: none; color: #00c853; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; transition: all 0.2s;">
+          Next →
+        </button>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button id="monitorAgainBtn" style="background: rgba(255,255,255,0.7); border: none; color: white; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s;">
+          Monitor Again
+        </button>
+        <button id="closeIndicatorBtn" style="background: rgba(255,255,255,0.3); border: none; color: white; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: background 0.2s;">
+          Close
+        </button>
+      </div>
     </div>
   `;
 
-  document.body.appendChild(notification);
+  // Find Previous button functionality
+  const findPreviousBtn = document.getElementById('findPreviousBtn');
+  if (findPreviousBtn) {
+    findPreviousBtn.addEventListener('click', () => {
+      if (position > 1) { // Only allow if not at first position
+        findPreviousCorrectAnswer();
+      }
+    });
+
+    // Hover effect (only if not disabled)
+    if (position > 1) {
+      findPreviousBtn.addEventListener('mouseenter', () => {
+        findPreviousBtn.style.background = 'white';
+        findPreviousBtn.style.transform = 'scale(1.05)';
+      });
+      findPreviousBtn.addEventListener('mouseleave', () => {
+        findPreviousBtn.style.background = 'rgba(255,255,255,0.9)';
+        findPreviousBtn.style.transform = 'scale(1)';
+      });
+    }
+  }
+
+  // Find Next button functionality
+  const findNextBtn = document.getElementById('findNextBtn');
+  if (findNextBtn) {
+    findNextBtn.addEventListener('click', () => {
+      findNextCorrectAnswer();
+    });
+
+    // Hover effect
+    findNextBtn.addEventListener('mouseenter', () => {
+      findNextBtn.style.background = 'white';
+      findNextBtn.style.transform = 'scale(1.05)';
+    });
+    findNextBtn.addEventListener('mouseleave', () => {
+      findNextBtn.style.background = 'rgba(255,255,255,0.9)';
+      findNextBtn.style.transform = 'scale(1)';
+    });
+  }
+
+  // Monitor Again button functionality
+  const monitorAgainBtn = document.getElementById('monitorAgainBtn');
+  if (monitorAgainBtn) {
+    monitorAgainBtn.addEventListener('click', () => {
+      // Remove the winner indicator
+      removeMonitoringIndicator();
+
+      // Reset the monitoring state
+      isMonitoring = false;
+      processedComments.clear();
+
+      // Send message to popup to reset it
+      chrome.runtime.sendMessage({
+        action: 'readyForNewMonitoring'
+      });
+
+      // Show inline dialog for new monitoring
+      showInlineDialog();
+    });
+
+    // Hover effect
+    monitorAgainBtn.addEventListener('mouseenter', () => {
+      monitorAgainBtn.style.background = 'rgba(255,255,255,0.9)';
+      monitorAgainBtn.style.transform = 'scale(1.05)';
+    });
+    monitorAgainBtn.addEventListener('mouseleave', () => {
+      monitorAgainBtn.style.background = 'rgba(255,255,255,0.7)';
+      monitorAgainBtn.style.transform = 'scale(1)';
+    });
+  }
 
   // Close button functionality
-  notification.querySelector('button').addEventListener('click', () => {
-    notification.remove();
+  const closeBtn = document.getElementById('closeIndicatorBtn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      removeMonitoringIndicator();
+    });
+
+    // Hover effect
+    closeBtn.addEventListener('mouseenter', () => {
+      closeBtn.style.background = 'rgba(255,255,255,0.5)';
+    });
+    closeBtn.addEventListener('mouseleave', () => {
+      closeBtn.style.background = 'rgba(255,255,255,0.3)';
+    });
+  }
+}
+
+/**
+ * Find the previous correct answer (navigate back in found winners)
+ */
+function findPreviousCorrectAnswer() {
+  if (currentWinnerIndex <= 0) {
+    return; // Already at first winner
+  }
+
+  // Move to previous winner
+  currentWinnerIndex--;
+  const previousWinner = foundWinners[currentWinnerIndex];
+
+  if (previousWinner && previousWinner.element) {
+    // Scroll to the previous winner
+    previousWinner.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Update indicator to show this winner
+    const position = currentWinnerIndex + 1;
+    showWinnerInIndicator(previousWinner, position);
+  }
+}
+
+/**
+ * Find the next correct answer in the comments
+ */
+function findNextCorrectAnswer() {
+  // Check if there's already a next winner in our found list
+  if (currentWinnerIndex < foundWinners.length - 1) {
+    // Move to next already-found winner
+    currentWinnerIndex++;
+    const nextWinner = foundWinners[currentWinnerIndex];
+
+    if (nextWinner && nextWinner.element) {
+      // Scroll to the next winner
+      nextWinner.element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Update indicator to show this winner
+      const position = currentWinnerIndex + 1;
+      showWinnerInIndicator(nextWinner, position);
+    }
+    return;
+  }
+
+  // No more already-found winners, search for new ones
+  const allComments = findCommentElements();
+
+  // Get all existing winners' elements
+  const foundElements = foundWinners.map(w => w.element);
+
+  // Search for next correct answer
+  for (let comment of allComments) {
+    // Skip if already found
+    if (foundElements.includes(comment)) {
+      continue;
+    }
+
+    // Extract comment info
+    const commentInfo = extractCommentInfo(comment);
+
+    if (commentInfo && commentInfo.text) {
+      // Check if this is a correct answer
+      if (isCorrectAnswer(commentInfo.text, correctAnswer)) {
+        foundCorrectAnswer(commentInfo);
+        return;
+      }
+    }
+  }
+
+  // No more correct answers found
+  showNoMoreResultsMessage();
+}
+
+/**
+ * Show message when no more results are found
+ */
+function showNoMoreResultsMessage() {
+  if (!monitoringIndicator) return;
+
+  const totalFound = foundWinners.length;
+  const positionLabel = getPositionLabel(totalFound);
+
+  // Update indicator to show "No more found" message
+  updateMonitoringIndicator(`🏁 No more found! (${totalFound} total - last was ${positionLabel})`);
+
+  // Auto-hide after 3 seconds
+  setTimeout(() => {
+    if (monitoringIndicator) {
+      // Restore to show the last winner
+      const lastWinner = foundWinners[foundWinners.length - 1];
+      if (lastWinner) {
+        showWinnerInIndicator(lastWinner, totalFound);
+      }
+    }
+  }, 3000);
+}
+
+/**
+ * Show inline FB Comment Checker dialog on the page
+ */
+function showInlineDialog() {
+  // Remove existing dialog if present
+  if (inlineDialog) {
+    inlineDialog.remove();
+    inlineDialog = null;
+  }
+
+  // Create dialog overlay
+  inlineDialog = document.createElement('div');
+  inlineDialog.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 10px 50px rgba(0,0,0,0.3);
+    z-index: 999999;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    min-width: 350px;
+    animation: dialogSlideIn 0.3s ease-out;
+  `;
+
+  inlineDialog.innerHTML = `
+    <style>
+      @keyframes dialogSlideIn {
+        from { transform: translate(-50%, -50%) scale(0.9); opacity: 0; }
+        to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      }
+      .fb-checker-dialog-header {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1877f2;
+        margin-bottom: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .fb-checker-dialog-label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 6px;
+      }
+      .fb-checker-dialog-input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 2px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+        box-sizing: border-box;
+        margin-bottom: 16px;
+        font-family: inherit;
+      }
+      .fb-checker-dialog-input:focus {
+        outline: none;
+        border-color: #1877f2;
+      }
+      .fb-checker-dialog-buttons {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+      }
+      .fb-checker-dialog-btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .fb-checker-dialog-btn-primary {
+        background: #1877f2;
+        color: white;
+      }
+      .fb-checker-dialog-btn-primary:hover {
+        background: #0e5ac7;
+        transform: translateY(-1px);
+      }
+      .fb-checker-dialog-btn-secondary {
+        background: #e4e6eb;
+        color: #333;
+      }
+      .fb-checker-dialog-btn-secondary:hover {
+        background: #d0d2d7;
+      }
+      .fb-checker-dialog-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        color: #888;
+        cursor: pointer;
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+      }
+      .fb-checker-dialog-close:hover {
+        background: #f0f0f0;
+      }
+      .fb-checker-dialog-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 16px;
+        font-size: 13px;
+        color: #555;
+      }
+      .fb-checker-dialog-checkbox input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        cursor: pointer;
+      }
+      .fb-checker-dialog-checkbox label {
+        cursor: pointer;
+        margin: 0;
+      }
+    </style>
+    <div class="fb-checker-dialog-header">
+      <span>📋 FB Comment Checker</span>
+      <button class="fb-checker-dialog-close" id="inlineDialogClose">×</button>
+    </div>
+    <label class="fb-checker-dialog-label" for="inlineAnswerInput">Answer to Monitor:</label>
+    <input
+      type="text"
+      id="inlineAnswerInput"
+      class="fb-checker-dialog-input"
+      placeholder="Enter the answer to look for..."
+      value="${correctAnswer}"
+    />
+    <div class="fb-checker-dialog-checkbox">
+      <input type="checkbox" id="inlineMatchModeCheckbox" ${matchMode === 'contains' ? 'checked' : ''}>
+      <label for="inlineMatchModeCheckbox">Contains match (answer can appear anywhere in comment)</label>
+    </div>
+    <div class="fb-checker-dialog-buttons">
+      <button class="fb-checker-dialog-btn fb-checker-dialog-btn-secondary" id="inlineDialogCancel">Cancel</button>
+      <button class="fb-checker-dialog-btn fb-checker-dialog-btn-primary" id="inlineDialogStart">Start Monitoring</button>
+    </div>
+  `;
+
+  document.body.appendChild(inlineDialog);
+
+  // Focus the input
+  const input = document.getElementById('inlineAnswerInput');
+  input.focus();
+  input.select();
+
+  // Close button
+  document.getElementById('inlineDialogClose').addEventListener('click', closeInlineDialog);
+  document.getElementById('inlineDialogCancel').addEventListener('click', closeInlineDialog);
+
+  // Start monitoring button
+  document.getElementById('inlineDialogStart').addEventListener('click', () => {
+    const answer = input.value.trim();
+    if (!answer) {
+      input.style.borderColor = '#f44336';
+      input.placeholder = 'Please enter an answer!';
+      return;
+    }
+
+    // Get match mode from checkbox
+    const checkbox = document.getElementById('inlineMatchModeCheckbox');
+    const mode = checkbox.checked ? 'contains' : 'exact';
+
+    // Save to chrome storage for sync with popup
+    chrome.storage.sync.set({ correctAnswer: answer, matchMode: mode });
+
+    // Close dialog
+    closeInlineDialog();
+
+    // Start monitoring with the new answer and match mode
+    startMonitoring(answer, mode);
   });
 
-  // Auto-remove after 30 seconds
-  setTimeout(() => {
-    if (notification.parentElement) {
-      notification.remove();
+  // Allow Enter key to submit
+  input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      document.getElementById('inlineDialogStart').click();
     }
-  }, 30000);
+  });
 }
+
+function closeInlineDialog() {
+  if (inlineDialog) {
+    inlineDialog.remove();
+    inlineDialog = null;
+  }
+}
+
 
 /**
  * Create and show monitoring indicator
@@ -483,6 +967,14 @@ function createMonitoringIndicator() {
   // Stop button functionality
   document.getElementById('stopMonitoringBtn').addEventListener('click', () => {
     stopMonitoring();
+
+    // Show inline dialog for new monitoring
+    showInlineDialog();
+
+    // Notify popup that monitoring stopped
+    chrome.runtime.sendMessage({
+      action: 'monitoringStopped'
+    });
   });
 }
 
@@ -584,12 +1076,16 @@ function updateMonitoringIndicator(text) {
 /**
  * Start monitoring for new comments
  */
-async function startMonitoring(answer) {
+async function startMonitoring(answer, mode = 'exact') {
   if (isMonitoring) {
     stopMonitoring();
   }
 
+  // Clear any previous highlights from previous monitoring sessions
+  clearHighlights();
+
   correctAnswer = answer;
+  matchMode = mode;
   isMonitoring = true;
   processedComments.clear();
 

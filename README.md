@@ -9,10 +9,16 @@ Perfect for Facebook contests, giveaways, trivia posts, and community engagement
 - **🔍 Real-time Monitoring** - Watches for new comments as they appear using MutationObserver
 - **⚡ Automatic Detection** - Instantly identifies when someone posts the correct answer
 - **📊 Complete Comment Analysis** - Loads ALL comments (not just visible ones) before monitoring
-- **🎯 Smart Matching** - Flexible answer matching (case-insensitive, word-based)
-- **🎨 Visual Feedback** - Beautiful on-page notifications and highlighted winning comment
+- **🎯 Dual Match Modes** - Choose between exact match or contains match for flexible answer detection
+- **🏆 Multiple Winner Tracking** - Finds and tracks all correct answers (1st, 2nd, 3rd place, etc.)
+- **⏭️ Navigate Winners** - Previous/Next buttons to browse through all found correct answers
+- **🔄 Quick Restart** - "Monitor Again" feature to start new monitoring without page refresh
+- **💬 Inline Dialog** - Start monitoring directly from Facebook page with on-page dialog
+- **🎨 Visual Feedback** - Beautiful on-page notifications, position badges, and highlighted winning comments
 - **👤 Full User Info** - Captures winner's name, profile URL, timestamp, and comment
 - **🔔 Multi-Channel Alerts** - On-page popup, browser notification, and extension popup display
+- **📚 Interactive Instructions** - Built-in guide shows you how to navigate to the proper post page
+- **📈 Loading Progress** - Real-time feedback showing comment count while loading
 - **🛡️ Page Validation** - Warns you if you're not on a proper post page
 
 ## 📸 Screenshots
@@ -85,7 +91,10 @@ Package the extension:
 
 1. Click the extension icon in your Chrome toolbar
 2. Enter the correct answer you're looking for
-3. Click **Start Monitoring**
+3. **Choose match mode** (optional):
+   - Unchecked (default): Exact match - comment must exactly match the answer
+   - Checked: Contains match - answer can appear anywhere in the comment
+4. Click **Start Monitoring**
 
 ### Step 3: Watch the Magic Happen
 
@@ -99,22 +108,38 @@ The extension will:
 ### Step 4: View Results
 
 When the correct answer is found:
-- 🎉 Purple notification popup appears
-- 💚 Winning comment is highlighted in green
+- 🎉 Green success notification appears with position badge (1st, 2nd, 3rd, etc.)
+- 💚 Winning comment is highlighted in green with position badge
 - 📜 Page auto-scrolls to the winning comment
 - 🔔 Browser notification (if permissions granted)
 - 📋 Full details shown in extension popup
 
+### Step 5: Find More Winners (Optional)
+
+After finding the first correct answer:
+- **Previous** button: Navigate back to earlier found winners
+- **Next** button: Search for and highlight the next correct answer
+- **Monitor Again** button: Start a new monitoring session with a different answer
+- Position badges show which place each winner achieved (1st, 2nd, 3rd, etc.)
+
 ## 🎯 Answer Matching
 
-By default, the extension uses **flexible matching**:
-- ✅ Case-insensitive: "HELLO" matches "hello"
-- ✅ Word-based: Looks for answer as a complete word
+The extension offers two built-in matching modes accessible via checkbox in the popup:
+
+### Exact Match (Default)
+- ✅ Comment must exactly match the answer (case-insensitive)
+- ✅ "hello" matches only "hello", "HELLO", etc.
+- ✅ "hello world" does NOT match
+
+### Contains Match
+- ✅ Answer can appear anywhere in the comment as a complete word
+- ✅ "hello" matches "hello world", "say hello", "hello there", etc.
+- ✅ Case-insensitive and word-based matching
 - ✅ Trimmed: Ignores leading/trailing whitespace
 
-### Customization
+### Advanced Customization
 
-Edit `content.js` (lines 210-214) to customize matching:
+Edit `content.js` (lines 232-247) to customize matching logic further:
 
 **Exact match only:**
 ```javascript
@@ -258,6 +283,21 @@ This extension:
 - Monitoring stops if you navigate away or refresh
 - Facebook's HTML structure changes may require updates
 
+## ☕ Support Development
+
+If you find this extension helpful, consider supporting its development!
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/lleona)
+
+Your support helps maintain and improve this extension with new features, bug fixes, and continued compatibility with Facebook's updates. Every coffee is appreciated! ☕
+
+**Why support?**
+- 🚀 Faster feature development
+- 🐛 Quick bug fixes
+- 📱 Future platform support (Instagram, Twitter, etc.)
+- 💡 Priority feature requests
+- ❤️ Keeps the project alive and free
+
 ## 🤝 Contributing
 
 Contributions are welcome! Areas for improvement:
@@ -278,10 +318,14 @@ Contributions are welcome! Areas for improvement:
 
 ### Key Functions
 - `extractCommentInfo()` - Extracts user data from comment elements
-- `isCorrectAnswer()` - Checks if comment matches answer
+- `isCorrectAnswer()` - Checks if comment matches answer (supports dual match modes)
 - `expandAllComments()` - Loads all comments from the post
 - `startMonitoring()` - Main monitoring logic
-- `foundCorrectAnswer()` - Winner detection handler
+- `foundCorrectAnswer()` - Winner detection handler (tracks multiple winners)
+- `findNextCorrectAnswer()` - Searches for the next correct answer
+- `findPreviousCorrectAnswer()` - Navigates to previous found winner
+- `showInlineDialog()` - Displays on-page monitoring dialog
+- `showInstructionsOverlay()` - Shows interactive navigation guide
 
 ## 📄 License
 
@@ -297,5 +341,7 @@ Built with:
 ---
 
 **Made with ❤️ for Facebook community managers, contest organizers, and page administrators**
+
+💖 **Enjoying this extension?** [Buy me a coffee](https://buymeacoffee.com/lleona) to support development!
 
 Need help? Found a bug? Open an issue!
