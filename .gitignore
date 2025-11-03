@@ -1,10 +1,51 @@
+# Dependencies
 node_modules/
+
+# Environment variables (sensitive data like API tokens)
 .env
+.env.local
+
+# OS files
 .DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
 *.log
-.claude/
-package.json
-package-lock.json
-index.js
-.env.example
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.sublime-project
+*.sublime-workspace
+
+# Chrome extension packaging
+*.crx
+*.pem
+*.zip
+
+# Personal documentation/notes
 docs/
+notes/
+TODO.md
+NOTES.md
+
+# Chrome Web Store submission helpers (internal use only)
+PRIVACY_FORM_ANSWERS.md
+SUBMISSION_GUIDE.md
+
+# Old/deprecated files
+index.js
+
+# Claude AI workspace
+.claude/
+
+# Test data or screenshots with real user info
+test-data/
+screenshots/real-users/
